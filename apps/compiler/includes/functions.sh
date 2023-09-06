@@ -17,6 +17,8 @@ function comp_ccacheEnable() {
     export CCACHE_CPP2=${CCACHE_CPP2:-true} # optimization for clang
     export CCACHE_COMPRESS=${CCACHE_COMPRESS:-1}
     export CCACHE_COMPRESSLEVEL=${CCACHE_COMPRESSLEVEL:-9}
+    export CCACHE_COMPILERCHECK=${CCACHE_COMPILERCHECK:-content}
+    export CCACHE_LOGFILE=${CCACHE_LOGFILE:-"$CCACHE_DIR/cache.debug"}
     #export CCACHE_NODIRECT=true
 
     export CCUSTOMOPTIONS="$CCUSTOMOPTIONS -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
@@ -102,9 +104,9 @@ function comp_compile() {
 
   echo "Using $MTHREADS threads"
 
-  CWD=$(pwd)
+  pushd "$BUILDPATH" >> /dev/null || exit 1
 
-  cd $BUILDPATH
+  comp_ccacheEnable
 
   comp_ccacheResetStats
 
@@ -117,7 +119,7 @@ function comp_compile() {
     msys*)
       cmake --install . --config $CTYPE
 
-      cd $CWD
+      popd >> /dev/null || exit 1
 
       echo "Done"
       ;;
@@ -134,21 +136,24 @@ function comp_compile() {
       echo "Cmake install..."
       sudo cmake --install . --config $CTYPE
 
-      cd $CWD
+      popd >> /dev/null || exit 1
 
-      if [[ $DOCKER = 1 ]]; then
-        echo "Generating confs..."
-        cp -n "env/dist/etc/worldserver.conf.dockerdist" "${confDir}/worldserver.conf"
-        cp -n "env/dist/etc/authserver.conf.dockerdist" "${confDir}/authserver.conf"
-        cp -n "env/dist/etc/dbimport.conf.dockerdist" "${confDir}/dbimport.conf"
-      fi
       # set all aplications SUID bit
       echo "Setting permissions on binary files"
-      find "$AC_BINPATH_FULL" -type f -exec sudo chown root:root -- {} +
-      find "$AC_BINPATH_FULL" -type f -exec sudo chmod u+s  -- {} +
+      find "$AC_BINPATH_FULL"  -mindepth 1 -maxdepth 1 -type f -exec sudo chown root:root -- {} +
+      find "$AC_BINPATH_FULL"  -mindepth 1 -maxdepth 1 -type f -exec sudo chmod u+s  -- {} +
+
+      if [[ -n "$DOCKER" ]]; then
+          [[ -f "$confDir/worldserver.conf.dist" ]] && \
+              cp -nv "$confDir/worldserver.conf.dist" "$confDir/worldserver.conf"
+          [[ -f "$confDir/authserver.conf.dist" ]] && \
+              cp -nv "$confDir/authserver.conf.dist" "$confDir/authserver.conf"
+          [[ -f "$confDir/dbimport.conf.dist" ]] && \
+              cp -nv "$confDir/dbimport.conf.dist" "$confDir/dbimport.conf"
+      fi
 
       echo "Done"
-    ;;
+      ;;
   esac
 
   runHooks "ON_AFTER_BUILD"
